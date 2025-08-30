@@ -52,12 +52,24 @@
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
     const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    function onResizeRecompute() {
+      // Recompute dynamic sizes based on canvas height
+      const available = FLOOR_Y();
+      const targetH = Math.max(64 * DPR, Math.floor((available) * 0.38)); // player ~38% of play area
+      const aspect = SPRITE_META.frameWidth / SPRITE_META.frameHeight;
+      player.h = targetH;
+      player.w = Math.floor(targetH * aspect);
+      player.x = PLAYER_X();
+      if (player.onGround) { player.y = FLOOR_Y() - player.h; }
+    }
+
     function resizeCanvas() {
       const cssW = canvas.clientWidth;
       const cssH = canvas.clientHeight;
       canvas.width = Math.floor(cssW * DPR);
       canvas.height = Math.floor(cssH * DPR);
       ctx.imageSmoothingEnabled = false;
+      onResizeRecompute();
     }
     new ResizeObserver(resizeCanvas).observe(canvas);
 
@@ -66,7 +78,7 @@
     const GRAVITY = 0.9;               // acceleration
     const JUMP_VELOCITY = -18.5;       // initial jump impulse
     const FLOOR_Y = () => canvas.height - GROUND_H;
-    const PLAYER_SCALE = 1.2;          // scale relative to source sprite
+    // Player sizing is dynamic now; see reset()/onResize
     const PLAYER_X = () => Math.floor(canvas.width * 0.2);
     const SCROLL_SPEED_START = 9;      // base speed
     const SPEED_INCREASE = 0.00025;    // ramp per frame
@@ -78,6 +90,8 @@
     // --- Load sprite sheet ---
     const sprite = new Image();
     sprite.src = SPRITE_META.imagePath;
+    const backgroundImg = new Image();
+    backgroundImg.src = "./assets/lava_bg.jpg";
 
     // --- State ---
     let state = 'playing'; // 'playing' | 'dead'
@@ -90,8 +104,8 @@
     // Player object
     const player = {
       x: 0, y: 0, vy: 0, onGround: true, frame: 0, frameTimer: 0,
-      w: Math.floor(SPRITE_META.frameWidth * PLAYER_SCALE * DPR),
-      h: Math.floor(SPRITE_META.frameHeight * PLAYER_SCALE * DPR),
+      w: Math.floor(SPRITE_META.frameWidth * 1.0 * DPR),
+      h: Math.floor(SPRITE_META.frameHeight * 1.0 * DPR),
       update() {
         // Gravity
         this.vy += GRAVITY * DPR;
@@ -144,11 +158,17 @@
     // Obstacles
     const obstacles = [];
     let spawnTimer = 90;
+    function obstacleDims(){
+      const base = Math.max(40 * DPR, canvas.height * 0.08);
+      const height = Math.floor(base + Math.random() * (canvas.height * 0.18));
+      const width = Math.floor(base * 0.7 + Math.random() * (base * 0.8));
+      return {width, height};
+    }
 
     function spawnObstacle() {
-      const base = 55 * DPR;
-      const height = Math.floor(base + Math.random() * (120 * DPR));
-      const width = Math.floor(40 * DPR + Math.random() * (50 * DPR));
+      const d = obstacleDims();
+      const height = d.height;
+      const width = d.width;
       const y = FLOOR_Y() - height;
       const x = canvas.width + width + Math.random() * 200 * DPR;
       const color = '#2bd1ff';
@@ -170,13 +190,31 @@
     }
 
     function drawBackground() {
-      // simple parallax stars
-      ctx.fillStyle = 'rgba(255,255,255,.06)';
-      for (let i = 0; i < 50; i++) {
-        const px = ((i*311 + t*speed*0.25) % canvas.width);
-        const py = (i*97) % (FLOOR_Y() - 80*DPR);
-        ctx.fillRect(px, py, 2*DPR, 2*DPR);
+      if (!bgReady) return;
+      // "Cover" the canvas while preserving aspect ratio; layer/tile horizontally
+      const coverScale = Math.max(canvas.width / bgImg.width, canvas.height / bgImg.height);
+      const dw = Math.ceil(bgImg.width * coverScale);
+      const dh = Math.ceil(bgImg.height * coverScale);
+      const dy = Math.floor((canvas.height - dh) / 2);
+
+      const speeds = [0.12, 0.28, 0.5];
+      const alphas = [0.6, 0.85, 1];
+      for (let li = 0; li < speeds.length; li++) {
+        const offset = Math.floor((-t * speed * speeds[li]) % dw);
+        ctx.save();
+        ctx.globalAlpha = alphas[li];
+        let x = offset - dw;
+        while (x < canvas.width) {
+          ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, Math.floor(x), Math.floor(dy), dw, dh);
+          x += dw;
+        }
+        ctx.restore();
       }
+    }
+        ctx.restore();
+      }
+    }
+    }
     }
 
     function rectsIntersect(a, b) {
@@ -249,6 +287,7 @@
       document.getElementById('score').textContent = '0';
       obstacles.length = 0;
       spawnTimer = 90;
+      onResizeRecompute();
       player.x = PLAYER_X();
       player.y = FLOOR_Y() - player.h;
       player.vy = 0;
