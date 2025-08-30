@@ -90,8 +90,10 @@
     // --- Load sprite sheet ---
     const sprite = new Image();
     sprite.src = SPRITE_META.imagePath;
-    const backgroundImg = new Image();
-    backgroundImg.src = "./assets/lava_bg.jpg";
+    const bgImg = new Image();
+    bgImg.src = "./assets/bg_canyon.jpg";
+    let bgReady = false;
+    bgImg.onload = () => { bgReady = true; };
 
     // --- State ---
     let state = 'playing'; // 'playing' | 'dead'
