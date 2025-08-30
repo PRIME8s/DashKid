@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>Endless Runner — Sprite Sheet</title>
+  <style>
+    :root { --bg: #0b0f1a; --fg: #e8f0ff; --accent: #78a6ff; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto; }
+    .wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:12px; }
+    canvas { background: linear-gradient(180deg, #0b0f1a 0%, #0b1d2e 60%, #123 100%); width: min(100vw, 100vh * 16/9); height: min(100vh, 100vw * 9/16); border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,.45); touch-action: manipulation; }
+    .hud { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display:flex; gap:12px; background: rgba(0,0,0,.35); padding:8px 12px; border-radius: 12px; backdrop-filter: blur(6px); font-weight:600; }
+    .btnbar { display:flex; gap:10px; }
+    button { background:#111a2d; color:var(--fg); border:1px solid #223; padding:8px 12px; border-radius:10px; font-weight:600; cursor:pointer; }
+    button:active { transform:translateY(1px); }
+    .overlay { position: absolute; inset: 0; display:none; align-items:center; justify-content:center; }
+    .overlay.show { display:flex; }
+    .card { background: rgba(0,0,0,.55); padding: 18px 22px; border-radius: 14px; text-align:center; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+    a.download { color: var(--accent); text-decoration: none; }
+    small { opacity:.7; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="1280" height="720"></canvas>
+    <div class="btnbar">
+      <button id="jumpBtn" title="Tap / Space / ↑">Jump</button>
+      <button id="restartBtn">Restart</button>
+    </div>
+  </div>
+  <div class="hud" id="hud">
+    <div>Score: <span id="score">0</span></div>
+    <div>Best: <span id="best">0</span></div>
+  </div>
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <h2>Game Over</h2>
+      <p>Tap / click <strong>Restart</strong> or press <strong>R</strong>.</p>
+      <small>Tip: Hold jump for a higher leap.</small>
+    </div>
+  </div>
+  <script>
+    // --- Sprite metadata (auto-filled) ---
+    const SPRITE_META = {
+      frameWidth: 1400,
+      frameHeight: 1400,
+      frames: 28,
+      imagePath: "./assets/sprite_sheet.png"
+    };
+
+    // --- Canvas setup with HiDPI scaling ---
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const DPR = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+    function resizeCanvas() {
+      const cssW = canvas.clientWidth;
+      const cssH = canvas.clientHeight;
+      canvas.width = Math.floor(cssW * DPR);
+      canvas.height = Math.floor(cssH * DPR);
+      ctx.imageSmoothingEnabled = false;
+    }
+    new ResizeObserver(resizeCanvas).observe(canvas);
+
+    // --- Game constants ---
+    const GROUND_H = 140;              // pixel height for ground strip
+    const GRAVITY = 0.9;               // acceleration
+    const JUMP_VELOCITY = -18.5;       // initial jump impulse
+    const FLOOR_Y = () => canvas.height - GROUND_H;
+    const PLAYER_SCALE = 1.2;          // scale relative to source sprite
+    const PLAYER_X = () => Math.floor(canvas.width * 0.2);
+    const SCROLL_SPEED_START = 9;      // base speed
+    const SPEED_INCREASE = 0.00025;    // ramp per frame
+    const SPAWN_MIN = 65;              // min spawn frames
+    const SPAWN_MAX = 140;             // max spawn frames
+    const RUN_FPS = 12;                // run animation speed
+    const HITBOX_SHRINK = 0.78;        // reduce AABB size for fairness
+
+    // --- Load sprite sheet ---
+    const sprite = new Image();
+    sprite.src = SPRITE_META.imagePath;
+    const backgroundImg = new Image();
+    backgroundImg.src = "./assets/lava_bg.jpg";
+
+    // --- State ---
+    let state = 'playing'; // 'playing' | 'dead'
+    let t = 0;
+    let speed = SCROLL_SPEED_START;
+    let score = 0;
+    let best = Number(localStorage.getItem('runner_best')||0);
+    document.getElementById('best').textContent = best;
+
+    // Player object
+    const player = {
+      x: 0, y: 0, vy: 0, onGround: true, frame: 0, frameTimer: 0,
+      w: Math.floor(SPRITE_META.frameWidth * PLAYER_SCALE * DPR),
+      h: Math.floor(SPRITE_META.frameHeight * PLAYER_SCALE * DPR),
+      update() {
+        // Gravity
+        this.vy += GRAVITY * DPR;
+        this.y += this.vy * DPR;
+
+        // Ground collision
+        const groundY = FLOOR_Y() - this.h;
+        if (this.y >= groundY) {
+          this.y = groundY;
+          this.vy = 0;
+          this.onGround = true;
+        } else {
+          this.onGround = false;
+        }
+
+        // Animate running only on ground
+        if (this.onGround) {
+          this.frameTimer += 1;
+          if (this.frameTimer >= (60 / RUN_FPS)) {
+            this.frameTimer = 0;
+            this.frame = (this.frame + 1) % SPRITE_META.frames;
+          }
+        }
+      },
+      jump() {
+        if (this.onGround) {
+          this.vy = JUMP_VELOCITY * DPR;
+          this.onGround = false;
+        }
+      },
+      draw() {
+        const sx = this.onGround ? this.frame : Math.floor(SPRITE_META.frames * 0.5);
+        const sxo = sx * SPRITE_META.frameWidth;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // Draw sprite
+        ctx.drawImage(sprite, sxo, 0, SPRITE_META.frameWidth, SPRITE_META.frameHeight,
+                      0, 0, this.w, this.h);
+        ctx.restore();
+      },
+      hitbox() {
+        const shrinkW = this.w * HITBOX_SHRINK;
+        const shrinkH = this.h * HITBOX_SHRINK;
+        const dx = (this.w - shrinkW)/2;
+        const dy = (this.h - shrinkH)/3; // reduce head collisions a bit
+        return { x: this.x + dx, y: this.y + dy, w: shrinkW, h: shrinkH };
+      }
+    };
+
+    // Obstacles
+    const obstacles = [];
+    let spawnTimer = 90;
+
+    function spawnObstacle() {
+      const base = 55 * DPR;
+      const height = Math.floor(base + Math.random() * (120 * DPR));
+      const width = Math.floor(40 * DPR + Math.random() * (50 * DPR));
+      const y = FLOOR_Y() - height;
+      const x = canvas.width + width + Math.random() * 200 * DPR;
+      const color = '#2bd1ff';
+      obstacles.push({ x, y, w: width, h: height, color });
+    }
+
+    function drawGround() {
+      // Scrolling ground stripes
+      const y = FLOOR_Y();
+      ctx.fillStyle = '#0a1424';
+      ctx.fillRect(0, y, canvas.width, GROUND_H);
+      // stripes
+      ctx.fillStyle = 'rgba(255,255,255,.06)';
+      const stripeW = 80 * DPR;
+      const offset = (-t * speed) % stripeW;
+      for (let i = -1; i <= canvas.width / stripeW + 1; i++) {
+        ctx.fillRect(Math.floor(i*stripeW + offset), y + 0.65*GROUND_H, Math.floor(stripeW*0.6), Math.floor(4*DPR));
+      }
+    }
+
+    function drawBackground() {
+      if (!bgReady) return;
+      // Scale to canvas height; tile horizontally
+      const scale = canvas.height / bgImg.height;
+      const sw = Math.floor(bgImg.width * scale);
+      const sh = canvas.height;
+
+      // Layer speeds (back to front)
+      const speeds = [0.15, 0.35, 0.6];
+      const alphas = [0.6, 0.8, 1.0];
+      const yOffsets = [0, 0, 0]; // could shift layers if desired
+
+      for (let li = 0; li < speeds.length; li++) {
+        const offset = Math.floor((-t * speed * speeds[li]) % sw);
+        ctx.save();
+        ctx.globalAlpha = alphas[li];
+        let x = offset - sw;
+        while (x < canvas.width) {
+          ctx.drawImage(bgImg, 0, 0, bgImg.width, bgImg.height, x, yOffsets[li], sw, sh);
+          x += sw;
+        }
+        ctx.restore();
+      }
+    }
+    }
+    }
+
+    function rectsIntersect(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function update() {
+      if (state !== 'playing') return;
+      t++;
+      speed += SPEED_INCREASE * DPR;
+
+      player.update();
+
+      // Obstacles
+      spawnTimer--;
+      if (spawnTimer <= 0) {
+        spawnObstacle();
+        spawnTimer = Math.floor(SPAWN_MIN + Math.random() * (SPAWN_MAX - SPAWN_MIN));
+      }
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.x -= speed * DPR;
+        if (o.x + o.w < 0) {
+          obstacles.splice(i,1);
+          score += 1;
+          document.getElementById('score').textContent = score;
+        }
+      }
+
+      // Collisions
+      const hb = player.hitbox();
+      for (const o of obstacles) {
+        if (rectsIntersect(hb, o)) {
+          die();
+          break;
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawBackground();
+      drawGround();
+
+      // Draw obstacles
+      for (const o of obstacles) {
+        ctx.fillStyle = 'rgba(43,209,255,.2)';
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        ctx.strokeStyle = '#2bd1ff';
+        ctx.lineWidth = 3 * DPR;
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+      }
+
+      // Player
+      player.draw();
+
+      // HUD outline for hitbox (debug off by default)
+      // const hb = player.hitbox(); ctx.strokeStyle = 'yellow'; ctx.strokeRect(hb.x,hb.y,hb.w,hb.h);
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    function reset() {
+      state = 'playing';
+      t = 0; speed = SCROLL_SPEED_START; score = 0;
+      document.getElementById('score').textContent = '0';
+      obstacles.length = 0;
+      spawnTimer = 90;
+      player.x = PLAYER_X();
+      player.y = FLOOR_Y() - player.h;
+      player.vy = 0;
+      player.onGround = true;
+      player.frame = 0;
+      document.getElementById('overlay').classList.remove('show');
+    }
+
+    function die() {
+      state = 'dead';
+      best = Math.max(best, score);
+      localStorage.setItem('runner_best', best);
+      document.getElementById('best').textContent = best;
+      document.getElementById('overlay').classList.add('show');
+    }
+
+    // Controls
+    function jump() { player.jump(); }
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.code === 'ArrowUp' || e.key === 'w') { jump(); }
+      if (e.key === 'r' || e.key === 'R') { reset(); }
+    });
+    document.getElementById('jumpBtn').addEventListener('click', jump);
+    document.getElementById('restartBtn').addEventListener('click', reset);
+    canvas.addEventListener('pointerdown', jump);
+
+    sprite.onload = () => { resizeCanvas(); reset(); loop(); };
+  </script>
+</body>
+</html>
