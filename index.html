@@ -45,7 +45,7 @@
       frameWidth: 1400,
       frameHeight: 1400,
       frames: 28,
-      imagePath: "./assets/sprite_sheet.png"
+      imagePath: "/assets/sprite_sheet.png"
     };
 
     // --- Canvas setup with HiDPI scaling ---
@@ -79,7 +79,7 @@
     const sprite = new Image();
     sprite.src = SPRITE_META.imagePath;
     const backgroundImg = new Image();
-    backgroundImg.src = "./assets/lava_bg.jpg";
+    backgroundImg.src = "/assets/lava_bg.jpg";
 
     // --- State ---
     let state = 'playing'; // 'playing' | 'dead'
