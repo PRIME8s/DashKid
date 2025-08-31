@@ -1,7 +1,6 @@
 # Endless Runner (Canvas)
 
-This is a lightweight endless runner that uses your uploaded sprite sheet.
-- **Sprite frames**: 28
+This is a lightweight endless runner
 - **Frame size**: 1400×1400px
 - **Controls**: Space / ↑ / tap to jump. R to restart.
 - **Mobile**: Tap canvas to jump; high-DPI scaling enabled.
@@ -9,6 +8,3 @@ This is a lightweight endless runner that uses your uploaded sprite sheet.
 
 Files:
 - `index.html` – everything in one file for easy hosting.
-- `assets/sprite_sheet.png` – your sprite sheet copied in.
-
-You can deploy this to Vercel, GitHub Pages, or any static host.
